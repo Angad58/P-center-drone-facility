@@ -1,83 +1,103 @@
+import json
 import numpy as np
 from shapely.geometry import Polygon, Point
+from shapely.ops import triangulate
 
-def load_data(num_points=100):
-    # More detailed Manhattan boundary (counterclockwise from bottom)
-    manhattan_coords = [
-        (40.7019, -74.0097),  # Battery Park
-        (40.7052, -74.0030),  # South Street Seaport
-        (40.7134, -73.9903),  # Lower East Side
-        (40.7262, -73.9796),  # East Village
-        (40.7347, -73.9737),  # Stuyvesant Town
-        (40.7580, -73.9738),  # Midtown East
-        (40.7685, -73.9666),  # Upper East Side
-        (40.7831, -73.9593),  # Upper East Side North
-        (40.7940, -73.9366),  # East Harlem
-        (40.8051, -73.9308),  # Harlem River
-        (40.8185, -73.9473),  # Hamilton Heights
-        (40.8075, -73.9609),  # Morning Side Heights
-        (40.7937, -73.9712),  # Upper West Side
-        (40.7870, -73.9782),  # Upper West Side South
-        (40.7720, -73.9856),  # Midtown West
-        (40.7551, -73.9989),  # Chelsea
-        (40.7421, -74.0080),  # Greenwich Village
-        (40.7219, -74.0134),  # Tribeca
-        (40.7019, -74.0097),  # Back to start
-    ]
-    
-    manhattan = Polygon([(lon, lat) for lat, lon in manhattan_coords])  # Note the swap for shapely
-    
-    # Updated density zones based on real population density
-    density_zones = {
-        'midtown': {
-            'bounds': (40.7480, 40.7630, -73.9900, -73.9700),
-            'weight': 0.25  # Very high density
-        },
-        'upper_east': {
-            'bounds': (40.7700, 40.7850, -73.9700, -73.9500),
-            'weight': 0.20
-        },
-        'financial': {
-            'bounds': (40.7050, 40.7150, -74.0150, -74.0000),
-            'weight': 0.15
-        },
-        'chelsea': {
-            'bounds': (40.7400, 40.7550, -74.0050, -73.9900),
-            'weight': 0.15
-        },
-        'rest': {
-            'weight': 0.25
+class NYCDataProcessor:
+    def __init__(self):
+        self.borough_codes = {
+            "1": "Manhattan",
+            "2": "Bronx",
+            "3": "Brooklyn", 
+            "4": "Queens",
+            "5": "Staten Island"
         }
-    }
-
-    def generate_points():
-        points = []
-        points_needed = 0
+    
+    def load_geojson(self, file_path):
+        """Load GeoJSON data from file"""
+        try:
+            with open(file_path, 'r') as f:
+                return json.load(f)
+        except Exception as e:
+            print(f"Error loading GeoJSON: {e}")
+            return None
+    
+    def extract_borough_coordinates(self, geojson_data, boro_code):
+        """Extract coordinates for a specific borough"""
+        for feature in geojson_data['features']:
+            if feature['properties']['boro_code'] == boro_code:
+                return feature['geometry']['coordinates']
+        return None
+    
+    def generate_points_in_borough(self, coordinates, num_points=100):
+        """Generate random points within a borough boundary"""
+        # Convert coordinates to polygon
+        polygon_coords = []
+        for poly in coordinates:
+            for ring in poly:
+                polygon_coords.extend([(lon, lat) for lon, lat in ring])
         
-        for zone, info in density_zones.items():
-            zone_points = int(num_points * info['weight'])
-            points_needed += zone_points
+        polygon = Polygon(polygon_coords)
+        
+        # Triangulate the polygon
+        triangles = triangulate(polygon)
+        areas = [t.area for t in triangles]
+        weights = np.array(areas) / sum(areas)
+        
+        points = []
+        while len(points) < num_points:
+            # Select random triangle based on area
+            triangle = np.random.choice(triangles, p=weights)
             
-            if zone != 'rest':
-                min_lat, max_lat, min_lon, max_lon = info['bounds']
-                attempts = 0
-                while len(points) < points_needed and attempts < 1000:
-                    lat = np.random.uniform(min_lat, max_lat)
-                    lon = np.random.uniform(min_lon, max_lon)
-                    if manhattan.contains(Point(lon, lat)):  # Note the swap
-                        points.append((lat, lon))
-                    attempts += 1
-            else:
-                while len(points) < num_points:
-                    lat = np.random.uniform(40.7019, 40.8185)
-                    lon = np.random.uniform(-74.0134, -73.9308)
-                    if manhattan.contains(Point(lon, lat)):  # Note the swap
-                        points.append((lat, lon))
-
+            # Generate point in triangle
+            a, b, c = triangle.exterior.coords[:-1]
+            r1, r2 = np.random.random(2)
+            s = np.sqrt(r1)
+            point = (
+                (1 - s) * np.array(a) + 
+                (s * (1 - r2)) * np.array(b) + 
+                (s * r2) * np.array(c)
+            )
+            
+            points.append((point[1], point[0]))  # Convert to lat, lon
+            
         return points
+    
+    def apply_density_weights(self, points, density_zones):
+        """Apply density weights to points"""
+        weighted_points = []
+        for lat, lon in points:
+            weight = 1.0
+            for zone, (minlat, maxlat, minlon, maxlon, w) in density_zones.items():
+                if minlat <= lat <= maxlat and minlon <= lon <= maxlon:
+                    weight = w * 2
+            if np.random.random() < weight:
+                weighted_points.append((lat, lon))
+        return weighted_points
+    
+    def get_borough_data(self, geojson_file, boro_code, num_points=100):
+        """Get all data for a borough including boundary and generated points"""
+        geojson_data = self.load_geojson(geojson_file)
+        if not geojson_data:
+            return None
+        
+        coordinates = self.extract_borough_coordinates(geojson_data, boro_code)
+        if not coordinates:
+            return None
+        
+        points = self.generate_points_in_borough(coordinates, num_points)
+        
+        return {
+            'borough': self.borough_codes[boro_code],
+            'boundary': coordinates,
+            'points': points,
+            'hubs': []  # Empty list for hubs to be added later
+        }
 
-    return {
-        'customers': generate_points(),
-        'hubs': [],
-        'boundary': manhattan_coords
-    }
+# Example density zones (can be modified as needed)
+DENSITY_ZONES = {
+    'manhattan_midtown': (40.7480, 40.7630, -73.9900, -73.9700, 0.25),
+    'manhattan_downtown': (40.7050, 40.7150, -74.0150, -74.0000, 0.15),
+    'brooklyn_downtown': (40.6900, 40.7000, -73.9900, -73.9700, 0.20),
+    'queens_central': (40.7400, 40.7550, -73.8900, -73.8700, 0.15)
+}
