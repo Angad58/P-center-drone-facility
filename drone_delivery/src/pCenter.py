@@ -133,7 +133,7 @@ class PCenter:
             min_distance = min(self._get_distance(candidate_idx, self.points.index(center)) 
                              for center in centers)
             # Weight the distance by population density
-            weighted_distance = min_distance * (0.2*weights[candidate_idx])
+            weighted_distance = min_distance * (0.2)*(weights[candidate_idx])
             
             if weighted_distance > max_weighted_distance:
                 max_weighted_distance = weighted_distance
