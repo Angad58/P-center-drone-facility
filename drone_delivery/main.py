@@ -39,6 +39,7 @@ def main():
     # Initialize P-Center solver
     solver = PCenter(borough_datasets=borough_datasets)
     solver.precalculate_distances()
+    
     # Find minimum number of centers needed for coverage
     drone_range = 3.0  # km
     max_centers = 50
@@ -46,19 +47,21 @@ def main():
         drone_range=drone_range, 
         max_centers=max_centers
     )
+    
     if centers is None:
         print("No solution found for the given parameters.")
         return
-    # Get solution metrics
-    # metrics = solver.evaluate_solution(centers, drone_range)
     
-    # # Print solution details
-    # print("\nP-Center Solution Results:")
-    # print(f"Minimum number of hubs needed: {min_centers}")
-    # print(f"Maximum service distance: {metrics['max_distance']:.2f} km")
-    # print(f"Average service distance: {metrics['avg_distance']:.2f} km")
-    # print(f"Population coverage ({drone_range}km): {metrics['coverage_percentage']:.1f}%")
-    # print(f"Points covered: {metrics['covered_points']} out of {metrics['total_points']}")
+    # Get solution metrics
+    metrics = solver.evaluate_solution(centers, drone_range)
+    
+    # Print solution details
+    print("\nP-Center Solution Results:")
+    print(f"Minimum number of hubs needed: {min_centers}")
+    print(f"Maximum service distance: {metrics['max_distance']:.2f} km")
+    print(f"Average service distance: {metrics['avg_distance']:.2f} km")
+    print(f"Population coverage ({drone_range}km): {metrics['coverage_percentage']:.1f}%")
+    print(f"Points covered: {metrics['covered_points']} out of {metrics['total_points']}")
     
     # Save hub locations
     hub_df = pd.DataFrame(centers, columns=['latitude', 'longitude'])
@@ -67,15 +70,26 @@ def main():
     print(f"\nSaved hub locations to: {hub_path}")
     
     # Create visualization
-    print(len(centers))
-    print(len(borough_datasets))
+    print(f"Number of service hubs: {len(centers)}")
+    
+    # Identify uncovered points
+    uncovered_points = []
+    for point_idx, point in enumerate(solver.points):
+        min_distance = min(solver._calculate_distance(point, center) for center in centers)
+        if min_distance > drone_range:
+            uncovered_points.append(point)
+    
+    # Print information about uncovered points
+    print(f"\nUncovered points: {len(uncovered_points)} out of {metrics['total_points']}")
+    for point in uncovered_points:
+        print(f"Uncovered point: ({point[0]:.4f}, {point[1]:.4f})")
+    
+    # Create visualization
     map_obj = visualizer.create_map(geojson_data, borough_datasets, centers)
     map_path = os.path.join(output_path, 'nyc_boroughs_solution.html')
     map_obj.save(map_path)
     
     print(f"\nVisualization saved to: {map_path}")
-    # print(f"Total demand points: {metrics['total_points']}")
-    # print(f"Number of service hubs: {len(centers)}")
 
 if __name__ == "__main__":
     main()

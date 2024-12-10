@@ -64,7 +64,7 @@ class NYCVisualizer:
                 # Add coverage circle with intersection check
                 folium.Circle(
                     location=[lat, lon],
-                    radius=3000,  # Convert km to meters
+                    radius=3000,
                     color='red',
                     weight=2,
                     fill=True,

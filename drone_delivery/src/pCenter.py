@@ -80,16 +80,21 @@ class PCenter:
                 # Need more centers
                 left = mid + 1
         
+        if best_centers is None:
+            print("No solution found for the given parameters.")
+            # Return the centers from the last iteration
+            return max_centers, self.solve_greedy(max_centers)
+        
         return min_required, best_centers
 
     def test_feasibility(self, centers, drone_range):
-      """Test if given centers can cover all points within drone_range"""
-      for point_idx, point in enumerate(self.points):
-          min_distance = min(self._get_distance(point_idx, self.points.index(center)) 
-                           for center in centers)
-          if min_distance > drone_range:
-              return False
-      return True
+        """Test if given centers can cover all points within drone_range"""
+        for point_idx, point in enumerate(self.points):
+            min_distance = min(self._get_distance(point_idx, self.points.index(center)) 
+                             for center in centers)
+            if min_distance > drone_range:
+                return False
+        return True
 
     def solve_greedy(self, num_centers):
         """
@@ -120,21 +125,21 @@ class PCenter:
         return centers
     
     def find_farthest_point(self, centers, candidates, weights):
-      """Find the farthest point considering population density weights"""
-      max_weighted_distance = -1
-      furthest_point = None
-      
-      for candidate_idx, point in enumerate(candidates):
-          min_distance = min(self._get_distance(candidate_idx, self.points.index(center)) 
-                           for center in centers)
-          # Weight the distance by population density
-          weighted_distance = min_distance * weights[candidate_idx]
-          
-          if weighted_distance > max_weighted_distance:
-              max_weighted_distance = weighted_distance
-              furthest_point = point
-      
-      return furthest_point
+        """Find the farthest point considering population density weights"""
+        max_weighted_distance = -1
+        furthest_point = None
+        
+        for candidate_idx, point in enumerate(candidates):
+            min_distance = min(self._get_distance(candidate_idx, self.points.index(center)) 
+                             for center in centers)
+            # Weight the distance by population density
+            weighted_distance = min_distance * (0.2*weights[candidate_idx])
+            
+            if weighted_distance > max_weighted_distance:
+                max_weighted_distance = weighted_distance
+                furthest_point = point
+        
+        return furthest_point
     
     def _calculate_distance(self, point1, point2):
         """Calculate distance between two points using Haversine formula"""
@@ -151,6 +156,7 @@ class PCenter:
         max_distance = -1
         total_distance = 0
         covered_points = 0
+        uncovered_points = []
         
         for center_idx, center in enumerate(centers):
             center_idx = self.points.index(center)
@@ -161,14 +167,23 @@ class PCenter:
                 
                 if min_distance <= drone_range:
                     covered_points += 1
+                else:
+                    uncovered_points.append(point)
         
         coverage_percentage = (covered_points / len(self.points)) * 100
         avg_distance = total_distance / len(self.points)
+        
+        print(f"Covered points: {covered_points} out of {len(self.points)} ({coverage_percentage:.2f}%)")
+        if len(uncovered_points) > 0:
+            print(f"Uncovered points: {len(uncovered_points)}")
+            for point in uncovered_points:
+                print(f"Uncovered point: ({point[0]:.4f}, {point[1]:.4f})")
         
         return {
             'max_distance': max_distance,
             'avg_distance': avg_distance,
             'coverage_percentage': coverage_percentage,
             'covered_points': covered_points,
+            'uncovered_points': uncovered_points,
             'total_points': len(self.points)
         }
