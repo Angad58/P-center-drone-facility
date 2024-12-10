@@ -7,30 +7,42 @@ import os
 
 class NYCDataProcessor:
     def __init__(self):
+        # Borough data from 2020 census
         self.borough_codes = {
-            "1": {"name": "Manhattan", 
-                  "high_density": [(40.7128, -73.9947), (40.7589, -73.9851), (40.7831, -73.9712)],
-                  "weight": 3.0},
-            "2": {"name": "Bronx", 
-                  "high_density": [(40.8448, -73.8648), (40.8501, -73.8662)],
-                  "weight": 2.0},
-            "3": {"name": "Brooklyn", 
-                  "high_density": [(40.6782, -73.9442), (40.6872, -73.9418)],
-                  "weight": 2.5},
-            "4": {"name": "Queens", 
-                  "high_density": [(40.7282, -73.7949), (40.7464, -73.8213)],
-                  "weight": 2.0},
-            "5": {"name": "Staten Island", 
-                  "high_density": [(40.6295, -74.0776)],
-                  "weight": 1.5}
+            "1": {
+                "name": "Manhattan",
+                "population": 1694251,
+                "density": 74781,
+                "centers": [(40.7128, -73.9947), (40.7589, -73.9851)],  # Midtown, Downtown
+            },
+            "2": {
+                "name": "Bronx",
+                "population": 1472654,
+                "density": 34920,
+                "centers": [(40.8448, -73.8648)]  # South Bronx
+            },
+            "3": {
+                "name": "Brooklyn",
+                "population": 2736074,
+                "density": 39438,
+                "centers": [(40.6782, -73.9442)]  # Downtown Brooklyn
+            },
+            "4": {
+                "name": "Queens",
+                "population": 2405464,
+                "density": 22125,
+                "centers": [(40.7282, -73.7949)]  # Long Island City
+            },
+            "5": {
+                "name": "Staten Island",
+                "population": 495747,
+                "density": 8618,
+                "centers": [(40.6295, -74.0776)]  # St. George
+            }
         }
         
-        self.density_multipliers = {
-            'very_high': 3.0,
-            'high': 2.0,
-            'medium': 1.5,
-            'low': 1.0
-        }
+        self.total_population = sum(b["population"] for b in self.borough_codes.values())
+        self.max_density = max(b["density"] for b in self.borough_codes.values())
 
     def load_geojson(self, file_path):
         try:
@@ -45,25 +57,29 @@ class NYCDataProcessor:
         return MultiPolygon([geometry])
 
     def get_density_weight(self, point, boro_code):
+        """Calculate weight based on actual density and distance to centers"""
         lat, lon = point.y, point.x
         borough_data = self.borough_codes[boro_code]
-        base_weight = borough_data['weight']
+        base_weight = borough_data['density'] / self.max_density
         
+        # Calculate distance to nearest center
         min_distance = float('inf')
-        for center_lat, center_lon in borough_data['high_density']:
+        for center_lat, center_lon in borough_data['centers']:
             dist = np.sqrt((lat - center_lat)**2 + (lon - center_lon)**2)
             min_distance = min(min_distance, dist)
         
-        if min_distance < 0.01:
-            return base_weight * self.density_multipliers['very_high']
-        elif min_distance < 0.02:
-            return base_weight * self.density_multipliers['high']
-        elif min_distance < 0.03:
-            return base_weight * self.density_multipliers['medium']
-        else:
-            return base_weight * self.density_multipliers['low']
+        # Adjust weight based on distance
+        distance_factor = np.exp(-min_distance * 100)  # Exponential decay
+        return base_weight * (1 + distance_factor)
 
-    def generate_points_in_borough(self, geometry, boro_code, num_points=100):
+    def calculate_points_per_borough(self, total_points):
+        """Calculate points per borough based on population"""
+        points = {}
+        for code, data in self.borough_codes.items():
+            points[code] = int((data["population"] / self.total_population) * total_points)
+        return points
+
+    def generate_points_in_borough(self, geometry, boro_code, num_points):
         borough_polygon = self.create_borough_polygon(geometry)
         minx, miny, maxx, maxy = borough_polygon.bounds
         
@@ -78,37 +94,39 @@ class NYCDataProcessor:
             
             if borough_polygon.contains(point):
                 density_weight = self.get_density_weight(point, boro_code)
-                acceptance_prob = density_weight / self.density_multipliers['very_high']
-                
-                if np.random.random() < acceptance_prob:
+                if np.random.random() < density_weight:
                     points.append((lat, lon))
             
             attempts += 1
         
-        if len(points) < num_points:
-            print(f"Warning: Generated {len(points)} out of {num_points} requested points for {self.borough_codes[boro_code]['name']}")
-        
         return points
 
-    def get_borough_data(self, geojson_data, boro_code, num_points=100):
-        if geojson_data.empty:
-            return None
+    def process_all_boroughs(self, geojson_data, total_points=1000):
+        """Process all boroughs with population-based point distribution"""
+        points_per_borough = self.calculate_points_per_borough(total_points)
+        borough_datasets = {}
         
-        borough_data = geojson_data[geojson_data['boro_code'] == boro_code]
+        for boro_code, num_points in points_per_borough.items():
+            borough_data = geojson_data[geojson_data['boro_code'] == boro_code]
+            if not borough_data.empty:
+                try:
+                    geometry = borough_data.iloc[0].geometry
+                    points = self.generate_points_in_borough(geometry, boro_code, num_points)
+                    
+                    borough_datasets[boro_code] = {
+                        'borough': self.borough_codes[boro_code]['name'],
+                        'geometry': geometry,
+                        'points': points,
+                        'population': self.borough_codes[boro_code]['population'],
+                        'density': self.borough_codes[boro_code]['density'],
+                        'hubs': []
+                    }
+                    
+                    print(f"Generated {len(points)} points for {self.borough_codes[boro_code]['name']}")
+                    print(f"Population: {self.borough_codes[boro_code]['population']:,}")
+                    print(f"Density: {self.borough_codes[boro_code]['density']:,}/sq mile\n")
+                    
+                except Exception as e:
+                    print(f"Error processing borough {boro_code}: {e}")
         
-        if borough_data.empty:
-            return None
-            
-        try:
-            geometry = borough_data.iloc[0].geometry
-            points = self.generate_points_in_borough(geometry, boro_code, num_points)
-            
-            return {
-                'borough': self.borough_codes[boro_code]['name'],
-                'geometry': geometry,
-                'points': points,
-                'hubs': []
-            }
-        except Exception as e:
-            print(f"Error processing borough {boro_code}: {e}")
-            return None
+        return borough_datasets

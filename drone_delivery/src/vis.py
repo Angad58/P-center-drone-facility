@@ -66,11 +66,11 @@ class NYCVisualizer:
                     ).add_to(m)
         
         # Add density heatmap
-        point_list = []
-        for data in borough_datasets.values():
-            point_list.extend([[lat, lon] for lat, lon in data['points']])
+        # point_list = []
+        # for data in borough_datasets.values():
+        #     point_list.extend([[lat, lon] for lat, lon in data['points']])
             
-        plugins.HeatMap(point_list).add_to(m)
+        # plugins.HeatMap(point_list).add_to(m)
         
         # Add legend
         legend_html = '''
