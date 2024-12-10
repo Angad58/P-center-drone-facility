@@ -85,7 +85,7 @@ class NYCDataProcessor:
         
         points = []
         attempts = 0
-        max_attempts = num_points * 100
+        max_attempts = num_points * 10
         
         while len(points) < num_points and attempts < max_attempts:
             lon = np.random.uniform(minx, maxx)
