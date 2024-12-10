@@ -152,14 +152,15 @@ class PCenter:
         total_distance = 0
         covered_points = 0
         
-        for point in self.points:
-            min_distance = min(self._calculate_distance(point, center) 
-                             for center in centers)
-            max_distance = max(max_distance, min_distance)
-            total_distance += min_distance
-            
-            if min_distance <= drone_range:
-                covered_points += 1
+        for center_idx, center in enumerate(centers):
+            center_idx = self.points.index(center)
+            for point_idx, point in enumerate(self.points):
+                min_distance = self._get_distance(point_idx, center_idx)
+                max_distance = max(max_distance, min_distance)
+                total_distance += min_distance
+                
+                if min_distance <= drone_range:
+                    covered_points += 1
         
         coverage_percentage = (covered_points / len(self.points)) * 100
         avg_distance = total_distance / len(self.points)
